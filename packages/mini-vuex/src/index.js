@@ -13,7 +13,7 @@ class Store {
     // state中数据转化为响应式
     this.state = _Vue.observable(state)
 
-    // 实现getters
+    // 实现getters（计算属性）
     // Object.create(null)而不是{}避免属性和对象原型链上的属性重名
     this.getters = Object.create(null)
     // 添加get方法
@@ -26,7 +26,7 @@ class Store {
       })
     })
 
-    // 实现mutations
+    // 实现mutations，只有通过mutations改变state中数据
     // 拿到options中的mutations传递给store实例对象
     this.mutations = Object.create(null)
     Object.keys(mutations).forEach((key) => {
@@ -35,11 +35,11 @@ class Store {
       }
     })
 
-    // 实现actions
+    // 实现actions，异步任务的处理，也要触发mutations
     this.actions = Object.create(null)
     Object.keys(actions).forEach((key) => {
       this.actions[key] = (params) => {
-        actions[key].call(this, this, params)
+        actions[key].call(this, this.state, params)
       }
     })
 
@@ -48,7 +48,7 @@ class Store {
       this.mutations[eventName](params)
     }
     dispatch = (eventName, params) => {
-      this.actions[eventNames](params)
+      this.actions[eventName](params)
     }
   }
 }
@@ -58,7 +58,7 @@ class Store {
 function install(Vue) {
   // 保存到全局 _Vue
   _Vue = Vue
-  // 全局注册混入beforeCreate选项
+  // 全局注册混入beforeCreate选项，每一个vue实例都能调用store对象
   _Vue.mixin({
     // 在vue实例创建之初，把$store挂载到vue上
     beforeCreate() {

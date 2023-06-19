@@ -15,7 +15,7 @@
 
 **安装Pinia:** `npm i pinia`
 
-###### **挂载Pinia**
+##### **挂载Pinia**
 
 ~~~js
 // src/main.ts
@@ -30,7 +30,7 @@ app.use(pinia)
 app.mount('#app')
 ~~~
 
-###### **创建store**
+##### **创建store**
 
 ~~~js
 // src/store/index.js
@@ -47,28 +47,28 @@ export const mainStore = defineStore('main', {
 })
 ~~~
 
-###### **使用store**
+##### **使用store**
 
-~~~vue
+~~~html
 // src/components/HelloWorld.vue
 <script setup lang="ts">
-    import [ mainStore } from../store/indexconst
+    import { mainStore } from../store/indexconst
     store = mainStore()
 </script>
 <template>
-	<h2>{[ store.msg }}</h2>
+	<h2>{{ store.msg }}</h2>
 </template>
 ~~~
 
-###### **解构store**
+##### **解构store**
 
-当store中的多个参数需要被使用到的时候，为了更简洁的使用这些变量，我们通常采用结构的方式一次性获取所有的变量名
+当store中的多个参数需要被使用到的时候，为了更简洁的使用这些变量，我们通常采用解构的方式一次性获取所有的变量名
 
-`const { count } = store`ES6传统方法解构，解构得到的数据不再具备响应式。
+`const { count } = store`  ES6传统方法解构，解构得到的数据不再具备响应式。
 
-pinia采用`storeToRefs`，`const { count } = storeToRefs(store)`
+pinia采用  `storeToRefs`，`const { count } = storeToRefs(store)`
 
-###### **修改数据状态**
+##### **修改数据状态**
 
 简单数据，直接操作`store.属性名`
 
@@ -78,14 +78,6 @@ pinia采用`storeToRefs`，`const { count } = storeToRefs(store)`
 // $patch + 对象
 const onObjClick = () => {
     store.$patch({
-        count: store.count + 2,
-        msg: store.msg === 'hello, pinia' ? 'aa' : 'bb'
-    })
-}
-
-// $patch + 函数
-const onObjClick = () => {
-    store.$patch(() => {
         count: store.count + 2,
         msg: store.msg === 'hello, pinia' ? 'aa' : 'bb'
     })
@@ -108,11 +100,11 @@ const actionClick = () => {
 }
 ~~~
 
-###### **getters**
+##### **getters**
 
 和计算属性一样
 
-###### **store之间的互相调用**
+##### **store之间的互相调用**
 
 在 Pinia 中，可以在一个 `store` 中 `import` 另外一个 `store` ，然后通过调用引入 store 方法的形式，获取引入 `store` 的状态
 

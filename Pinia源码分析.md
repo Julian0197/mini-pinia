@@ -55,9 +55,15 @@ defineStore 接受三种参数：
 - 只传入 options（id 包含在 options）
 - 传入 id + setup 函数
 
++ id: 定义store的唯一id，单独传参或者通过options.id进行传参
++ options：如果传参是对象，则可以传，state，getters，action，id，例如上图1 2 种声明方式；如果传参是Function，则自主声明变量方法，例如上图第三种声明方式
++ storeSetup：仅限第三种store的声明方式，传入函数
+
+<img src="https://p3-juejin.byteimg.com/tos-cn-i-k3u1fbpfcp/28fe3857f42143a58a4341b8742f5321~tplv-k3u1fbpfcp-zoom-in-crop-mark:4536:0:0:0.awebp">
+
 ```ts
-import {piniaSymbol} from './piniaSymbol'
-import {getCurrentInstance,inject,reactive,effectScope,isRef,isReactive} from 'vue'
+import { piniaSymbol } from './piniaSymbol'
+import { getCurrentInstance, inject, reactive, effectScope, isRef, isReactive } from 'vue'
 import { activePinia, setActivePinia } from './createPinia'
 
 /**
@@ -80,14 +86,16 @@ export function defineStore(idOrOptions, optionsOrSetup) {
   function useStore() {
     // vue3新特性，获取当前组件实例
     const instance = getCurrentInstance()
-    // 针对组件，注入piniaStore
+    // 接下来通过inject(piniaSymbol)获取pinia实例（在install阶段保存）。
     let piniaStore = instance && inject(piniaSymbol)
+    // store已注册
     if (piniaStore) {
       setActivePinia(piniaStore)
     }
-    // 即使不是组件中，也可以访问piniaStore
-    piniaStore = activePinia
-    // 第一次使用useStore，根据option创建store
+    // 即使不是组件中，也可以访问piniaStore，并断言pinia一定存在（前面找不到pinia会报错的逻辑省略了）
+    piniaStore = activePinia！
+    // 第一次使用useStore，根据option创建store。后续使用时调useStore时跳过。
+    // 单例模式，
     if (!piniaStore._stores.has(id)) {
       // 传进来一个setup函数 ，是第三种传参方式
       if (typeof optionsOrSetup === 'function') {
@@ -103,3 +111,73 @@ export function defineStore(idOrOptions, optionsOrSetup) {
 }
 ~~~
 ```
+
+<img src="https://p3-juejin.byteimg.com/tos-cn-i-k3u1fbpfcp/f9552eef800c448d8f47872730081697~tplv-k3u1fbpfcp-zoom-in-crop-mark:4536:0:0:0.awebp">
+
+### createSetupStore
+
+无论是传入对象还是函数，最后都会通过createSetupStore，处理state、getters和ction。
+
+~~~ts
+function isComputed(v) { // 计算属性是ref，同时也是一个effect
+  return !!(isRef(v)&&v.effect)
+}
+
+/**defineStore传入了setup函数时调用这个函数
+ * id 表示store的id
+ * setup表示setup函数
+ * piniaStore表示整个pinia的store
+ * isOption表示用户是否用option语法define的store
+*/
+function createSetupStore(id, setup, piniaStore,isOption) {
+  let scope
+  function $patch(){}
+  const partialStore = {//内置的api存放到这个store里
+    $patch
+  }
+  const store = reactive(partialStore) //store就是一个响应式对象，这个是最后暴露出去的store，会存放内置的api和用户定义的store
+
+  if (!piniaStore.state.value[id] && !isOption) { // 整个pinia的store里还没有存放过目前这个state 且 用户用options语法来define的store
+    piniaStore.state.value[id] = {}
+  }
+
+  //这个函数就是为了到时候方便停止响应式。（核心的创建store可以不要这部分代码）
+  const setupStore = piniaStore._e.run(() => { //这样包一层就可以到时候通过pinia.store.stop()来停止全部store的响应式
+    scope = effectScope()
+    return scope.run(()=>setup()) //这样包一层就可以到时候通过scope.stop()来停止这个store的响应式
+  })
+
+  //遍历这个store里的所有属性，做进一步处理
+  for (let key in setupStore) {
+    const prop = setupStore[key]
+
+     //处理action
+    if (typeof prop == 'function') {
+      setupStore[key] = wrapAction(key, prop)
+    }
+
+    //处理state
+    if ((isRef(prop) && !isComputed(prop)) || isReactive(prop)) { //如果他是ref或者是reactive则说明它是state（注意由于computed也是ref，所以要排除掉计算属性）
+      if (!isOption) { //如果是setup语法，把里面的state也存到全局的state里
+        piniaStore.state.value[id][key] = prop
+      }
+    }
+  }
+
+ /**对actions包一层，做一些处理。store里面存的actions实际都是经过了这个包装的actions。*/
+  function wrapAction(name, action) {
+    return function () {
+      let ret = action.apply(store, arguments) //使this永远指向store
+
+      //action执行后可能是一个promise，todo......
+
+      return ret
+    }
+  }
+
+  // 把不是用户定义的和是用户定义的都合并到store里，并给外面使用
+  Object.assign(store,setupStore)
+  piniaStore._stores.set(id, store)//将这个store存到piniaStore中
+  return store
+}
+~~~
