@@ -5,6 +5,10 @@ export { createPinia } from "./createPinia";
 export { defineStore } from "./defineStore";
 ```
 
+pinia源码中充分使用了ts的类型推断，下面简化的源码只实现了核心逻辑。
+
+pinia中废弃了mutations中操作state，vuex的mutations为了提升状态的可追踪性和可维护性。方便测试和调试。
+
 ## createPinia
 
 返回一个带 install 方法的对象，在 install 的时候向全局暴露出 pinia 对象（vue2 和 vue3 组件，甚至不是组件也都能使用），这个对象里存放了所有 store 的\_stores 属性，用来停止所有 state 响应式的\_e 属性，存放所有 state 的 state 属性，插件列表和 install 注册函数。
@@ -114,9 +118,49 @@ export function defineStore(idOrOptions, optionsOrSetup) {
 
 <img src="https://p3-juejin.byteimg.com/tos-cn-i-k3u1fbpfcp/f9552eef800c448d8f47872730081697~tplv-k3u1fbpfcp-zoom-in-crop-mark:4536:0:0:0.awebp">
 
+### createOptionStore
+
+defineStore的第二个参数使用非Function进行声明将会走入该逻辑。
+
+~~~ts
+function createOptionsStore(id, options,piniaStore) {
+  const { state, actions, getters } = options
+
+  function setup() { //处理store里的state、actions、getters
+    piniaStore.state.value[id] = state ? state() : {} //把这个store的state存到piniaStore里
+    const localState = toRefs(piniaStore.state.value[id]) //把这个store的state转换成ref即变成响应式，因为options写法里的state并不是响应式的。
+    return Object.assign( //这里返回的对象就是用户存放用户定义的属性和方法
+      localState, //用户的state
+      actions, // 用户的actions
+      // 使用数组的reduce API，初始值为{}，最后返回的是一个obj，里面将getter中属性一个个抓华为计算属性。
+      Object.keys(getters || {}).reduce((memo, name) => { //用户的getters，因为用户的getters这个对象里的属性都是函数，所以我要把这些函数都执行了变成计算属性
+        memo[name] = computed(() => {
+          let store = pinia._stores.get(id)
+          return getters[name].call(store)
+        })//call是为了保证this指向store
+    },{}))
+  }
+
+   // 使用createSetupStore创建store
+  store = createSetupStore(id, setup, options, pinia, hot, true);
+  
+  // 重写$store方法
+  store.$reset = function $reset() {
+    const newState = state ? state() : {};
+    // 我们使用补丁将所有更改分组到一个订阅中
+    this.$patch(($state) => {
+      assign($state, newState);
+    });
+  };
+  return store as any;
+}
+~~~
+
 ### createSetupStore
 
-无论是传入对象还是函数，最后都会通过createSetupStore，处理state、getters和ction。
+无论是传入对象还是函数，最后都会通过createSetupStore，处理state、getters和ction，最后转化为setup函数。
+
+<img src="https://p3-juejin.byteimg.com/tos-cn-i-k3u1fbpfcp/44f6001afa144c29a7b04971a18aa958~tplv-k3u1fbpfcp-zoom-in-crop-mark:4536:0:0:0.awebp">
 
 ~~~ts
 function isComputed(v) { // 计算属性是ref，同时也是一个effect
@@ -158,13 +202,15 @@ function createSetupStore(id, setup, piniaStore,isOption) {
 
     //处理state
     if ((isRef(prop) && !isComputed(prop)) || isReactive(prop)) { //如果他是ref或者是reactive则说明它是state（注意由于computed也是ref，所以要排除掉计算属性）
-      if (!isOption) { //如果是setup语法，把里面的state也存到全局的state里
+      if (!isOption) { //如果是setup语法，把里面的state也存到全局的state里。options结构在
         piniaStore.state.value[id][key] = prop
       }
     }
   }
 
- /**对actions包一层，做一些处理。store里面存的actions实际都是经过了这个包装的actions。*/
+ // 对actions包一层，做一些处理。store里面存的actions实际都是经过了这个包装的actions。
+ // 做了异常处理，如果actions中函数报错，会将错误传递给pinia实例的错误处理函数
+ // pinia中删除了mutations，无论是异步
   function wrapAction(name, action) {
     return function () {
       let ret = action.apply(store, arguments) //使this永远指向store
@@ -181,3 +227,21 @@ function createSetupStore(id, setup, piniaStore,isOption) {
   return store
 }
 ~~~
+
+**总结：**
+
+创建store的两种方式：传options或者传setup，两者最后都是通过createSetupStore实现。
+
+1. 对于createOptionStore：
+   + 提取options对象中的state，getters，actions转化为setupStore函数。
+   + 这个setup函数传给上面的createSetupStore来构建store.
+   + 再给这个store附上个$reset方法（这个方法只有options定义的store才有，调用该方法可以将当前state重置为初始化的状态）
+
+2. 对于creatSetupStore：
+   + 定义一个store存放pinia内置的api和属性
+   + 定义一个scope，可以停止内部的响应式
+   + 对setupStore中属性遍历，处理state变为响应式，处理getter变为计算属性，wrapAction处理actions，所有函数都改变  this指向当前store。
+   + 合并store和setupStore，放到全局pinia的 `_s` 属性中。
+
+## store内置API
+
