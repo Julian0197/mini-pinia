@@ -181,6 +181,7 @@ getters: {
     decorationName(state) {
       return `${state.name}今年${state.age}岁`
     },
+}
 ~~~
 
 两种方式导入：
