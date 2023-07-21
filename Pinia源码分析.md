@@ -243,5 +243,4 @@ function createSetupStore(id, setup, piniaStore,isOption) {
    + 对setupStore中属性遍历，处理state变为响应式，处理getter变为计算属性，wrapAction处理actions，所有函数都改变  this指向当前store。
    + 合并store和setupStore，放到全局pinia的 `_s` 属性中。
 
-## store内置API
 
